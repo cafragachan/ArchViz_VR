@@ -8,6 +8,7 @@
 
 
 class UCameraComponent;
+class APlayerCameraManager;
 
 UCLASS()
 class ARCHITECTUREEXPLORER_API AVRCharacter : public ACharacter
@@ -47,6 +48,10 @@ private:
 	UPROPERTY(EditAnywhere, Category = "Setup")
 	float LineTraceReach = 1000;
 
+	APlayerCameraManager* PlayerCameraManager = nullptr;
+
 	void CharacterForwardMovement(float Forward_);
 	void CharacterRightMovement(float Right_);
+	void BeginTeletransport();
+	void EndTeletransport();
 };
