@@ -54,6 +54,9 @@ private:
 	UPROPERTY(EditAnywhere)
 	class UMaterialInterface * BlinkerMaterial = nullptr;
 
+	UPROPERTY(VisibleAnywhere)
+	class USplineComponent* TeleportPath = nullptr;
+
 	UPROPERTY(EditDefaultsOnly)
 	class UStaticMesh * TeleportArchMesh = nullptr;
 
@@ -63,14 +66,15 @@ private:
 	UPROPERTY(EditAnywhere)
 	class UCurveFloat* Curve = nullptr;
 
-	UPROPERTY(EditAnywhere)
-	class UMotionControllerComponent* LeftControllerTouch = nullptr;
+	UPROPERTY()
+	class AHandController* LeftControllerTouch = nullptr;
+
+	UPROPERTY()
+	class AHandController* RightControllerTouch = nullptr;
 
 	UPROPERTY(EditAnywhere)
-	class UMotionControllerComponent* RightControllerTouch = nullptr;
+	TSubclassOf<AHandController> HandControllerClass;
 
-	UPROPERTY(VisibleAnywhere)
-	class USplineComponent* TeleportPath = nullptr;
 
 	UPROPERTY(VisibleAnywhere)
 	TArray<class USplineMeshComponent*> SplineMeshPool;
