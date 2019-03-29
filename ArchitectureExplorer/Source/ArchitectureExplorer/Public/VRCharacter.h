@@ -73,7 +73,7 @@ private:
 	class USplineComponent* TeleportPath = nullptr;
 
 	UPROPERTY(VisibleAnywhere)
-	TArray<UStaticMeshComponent*> MeshPool;
+	TArray<class USplineMeshComponent*> SplineMeshPool;
 
 	TArray<FVector> PointsInSpace;
 

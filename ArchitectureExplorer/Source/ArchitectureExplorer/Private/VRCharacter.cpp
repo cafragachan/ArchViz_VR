@@ -15,6 +15,7 @@
 #include "HeadMountedDisplay/Public/MotionControllerComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/SplineComponent.h"
+#include "Components/SplineMeshComponent.h"
 #include "Engine.h"
 
 // Sets default values
@@ -149,7 +150,7 @@ void AVRCharacter::ProjectileMarker()
 		GetOwner()
 	);
 
-	Params.DrawDebugType = EDrawDebugTrace::ForOneFrame;
+	//Params.DrawDebugType = EDrawDebugTrace::ForOneFrame; // draw debug spheres
 	Params.bTraceComplex = true;
 
 	FPredictProjectilePathResult PathResult;
@@ -169,39 +170,79 @@ void AVRCharacter::ProjectileMarker()
 		{
 			PointsInSpace.Add(PathResultData[i].Location);
 
-			if (MeshPool.Num() <= i)
-			{
-				UStaticMeshComponent* DynamicMesh = NewObject<UStaticMeshComponent>(this);
-				DynamicMesh->AttachToComponent(TeleportPath, FAttachmentTransformRules::KeepRelativeTransform);
-				DynamicMesh->SetStaticMesh(TeleportArchMesh);
-				DynamicMesh->SetMaterial(0, TeleportArchMaterial);
-				DynamicMesh->RegisterComponent();
-				DynamicMesh->SetWorldScale3D(FVector(0.05, 0.05, 0.05));
-				DynamicMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			if (i >= PathResultData.Num() - 1) continue;
 
-				MeshPool.Add(DynamicMesh);
+			if (SplineMeshPool.Num() <= i)
+			{
+				USplineMeshComponent* SplineMesh = NewObject<USplineMeshComponent>(this);
+				SplineMesh->SetMobility(EComponentMobility::Movable);
+				SplineMesh->AttachToComponent(TeleportPath, FAttachmentTransformRules::KeepRelativeTransform);
+				SplineMesh->SetStaticMesh(TeleportArchMesh);
+				SplineMesh->SetMaterial(0, TeleportArchMaterial);
+				SplineMesh->RegisterComponent();
+				SplineMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+				SplineMeshPool.Add(SplineMesh);
 			}
 
-			MeshPool[i]->SetWorldLocation(PathResultData[i].Location);
+			SplineMeshPool[i]->SetWorldLocation(PathResultData[i].Location);
+			SplineMeshPool[i]->SetVisibility(true);
+
+
+			if (i < PathResultData.Num() - 1)
+			{
+				auto LocalPos = SplineMeshPool[i]->GetComponentTransform().InverseTransformPosition(PathResultData[i + 1].Location);
+				SplineMeshPool[i]->SetEndPosition(LocalPos);
+			}
 		}
 
 		TeleportPath->SetSplinePoints(PointsInSpace, ESplineCoordinateSpace::World, true);
 
+		for (int i = 0; i < SplineMeshPool.Num(); ++i)
+		{
+			auto StartTangent = TeleportPath->GetTangentAtSplinePoint(i, ESplineCoordinateSpace::Local);
+			auto EndTangent = TeleportPath->GetTangentAtSplinePoint(i + 1, ESplineCoordinateSpace::Local);
+
+			SplineMeshPool[i]->SetStartTangent(StartTangent);
+			SplineMeshPool[i]->SetEndTangent(EndTangent);
+		}
 
 		//Update Marker
 		DestinationMarker->SetVisibility(true);
 		auto NavMesh = UNavigationSystemV1::GetNavigationSystem(GetWorld());
 		FNavLocation NavPos;
-		bool bNewPos = NavMesh->ProjectPointToNavigation(PathResult.HitResult.Location, NavPos);
+		bool bNewPos = NavMesh->ProjectPointToNavigation(PathResult.HitResult.Location, NavPos, FVector(100, 100, 100));
 
 		if (bNewPos)
 		{
 			DestinationMarker->SetWorldLocation(NavPos);
 		}
+
+		else
+		{
+			DestinationMarker->SetVisibility(false);
+
+			if (SplineMeshPool.Num() > 0)
+			{
+				for (auto& Spline : SplineMeshPool)
+				{
+					Spline->SetVisibility(false);
+				}
+			}
+		}
+
 	}
 	else
 	{
 		DestinationMarker->SetVisibility(false);
+
+		if (SplineMeshPool.Num() > 0)
+		{
+			for(auto& Spline : SplineMeshPool)
+			{
+				Spline->SetVisibility(false);
+			}
+		}
 	}
 }
 
@@ -244,35 +285,8 @@ FVector2D AVRCharacter::GetBlinkerCenter()
 }
 
 
-
-//not using just as reference in process
 void AVRCharacter::UpdateMarkerLocation()
 {
-	FHitResult Hit;
-
-	FVector Start = RightControllerTouch->GetComponentLocation();
-	FVector Look = RightControllerTouch->GetForwardVector();
-	//Look = Look.RotateAngleAxis(30, RightControllerTouch->GetRightVector());
-	FVector End = Start + Look * LineTraceReach;
-	bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, RightControllerTouch->GetComponentLocation(), End, ECollisionChannel::ECC_Visibility);
-
-	//DrawDebugLine(GetWorld(), Start, End, FColor::Cyan, false, 0, 0, 10);
-
-	if (bHit)
-	{
-		DestinationMarker->SetVisibility(true);
-		auto NavMesh = UNavigationSystemV1::GetNavigationSystem(GetWorld());
-		FNavLocation NavPos;
-		bool bNewPos = NavMesh->ProjectPointToNavigation(Hit.Location, NavPos);
-
-		if (bNewPos)
-		{
-			DestinationMarker->SetWorldLocation(NavPos);
-		}
-	}
-	else
-	{
-		DestinationMarker->SetVisibility(false);
-	}
+	
 }
-//
+
