@@ -67,8 +67,7 @@ void AVRCharacter::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 
 	CameraCorrection();
-	//UpdateMarkerLocation();
-	ProjectileMarker();
+	UpdateDestinationMarker();
 	UpdateBlinker();
 	
 }
@@ -138,114 +137,6 @@ void AVRCharacter::UpdateBlinker()
 
 }
 
-void AVRCharacter::ProjectileMarker()
-{
-	FPredictProjectilePathParams Params = FPredictProjectilePathParams
-	(
-		5.f,
-		RightControllerTouch->GetComponentLocation(),
-		RightControllerTouch->GetForwardVector() * ProjectilePathVelocity,
-		1.f,
-		ECollisionChannel::ECC_Visibility,
-		GetOwner()
-	);
-
-	//Params.DrawDebugType = EDrawDebugTrace::ForOneFrame; // draw debug spheres
-	Params.bTraceComplex = true;
-
-	FPredictProjectilePathResult PathResult;
-
-	bool bPath = UGameplayStatics::PredictProjectilePath(GetWorld(), Params, PathResult);
-
-	if (bPath)
-	{
-		//DrawSpline
-		TeleportPath->ClearSplinePoints();
-
-		auto PathResultData = PathResult.PathData;
-
-		PointsInSpace.Empty();
-
-		for(int i = 0; i < PathResultData.Num(); ++i)
-		{
-			PointsInSpace.Add(PathResultData[i].Location);
-
-			if (i >= PathResultData.Num() - 1) continue;
-
-			if (SplineMeshPool.Num() <= i)
-			{
-				USplineMeshComponent* SplineMesh = NewObject<USplineMeshComponent>(this);
-				SplineMesh->SetMobility(EComponentMobility::Movable);
-				SplineMesh->AttachToComponent(TeleportPath, FAttachmentTransformRules::KeepRelativeTransform);
-				SplineMesh->SetStaticMesh(TeleportArchMesh);
-				SplineMesh->SetMaterial(0, TeleportArchMaterial);
-				SplineMesh->RegisterComponent();
-				SplineMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
-				SplineMeshPool.Add(SplineMesh);
-			}
-
-			SplineMeshPool[i]->SetWorldLocation(PathResultData[i].Location);
-			SplineMeshPool[i]->SetVisibility(true);
-
-
-			if (i < PathResultData.Num() - 1)
-			{
-				auto LocalPos = SplineMeshPool[i]->GetComponentTransform().InverseTransformPosition(PathResultData[i + 1].Location);
-				SplineMeshPool[i]->SetEndPosition(LocalPos);
-			}
-		}
-
-		TeleportPath->SetSplinePoints(PointsInSpace, ESplineCoordinateSpace::World, true);
-
-		for (int i = 0; i < SplineMeshPool.Num(); ++i)
-		{
-			auto StartTangent = TeleportPath->GetTangentAtSplinePoint(i, ESplineCoordinateSpace::Local);
-			auto EndTangent = TeleportPath->GetTangentAtSplinePoint(i + 1, ESplineCoordinateSpace::Local);
-
-			SplineMeshPool[i]->SetStartTangent(StartTangent);
-			SplineMeshPool[i]->SetEndTangent(EndTangent);
-		}
-
-		//Update Marker
-		DestinationMarker->SetVisibility(true);
-		auto NavMesh = UNavigationSystemV1::GetNavigationSystem(GetWorld());
-		FNavLocation NavPos;
-		bool bNewPos = NavMesh->ProjectPointToNavigation(PathResult.HitResult.Location, NavPos, FVector(100, 100, 100));
-
-		if (bNewPos)
-		{
-			DestinationMarker->SetWorldLocation(NavPos);
-		}
-
-		else
-		{
-			DestinationMarker->SetVisibility(false);
-
-			if (SplineMeshPool.Num() > 0)
-			{
-				for (auto& Spline : SplineMeshPool)
-				{
-					Spline->SetVisibility(false);
-				}
-			}
-		}
-
-	}
-	else
-	{
-		DestinationMarker->SetVisibility(false);
-
-		if (SplineMeshPool.Num() > 0)
-		{
-			for(auto& Spline : SplineMeshPool)
-			{
-				Spline->SetVisibility(false);
-			}
-		}
-	}
-}
-
 FVector2D AVRCharacter::GetBlinkerCenter()
 {
 	if (GetVelocity().IsNearlyZero())	return FVector2D(0.5, 0.5);
@@ -284,9 +175,109 @@ FVector2D AVRCharacter::GetBlinkerCenter()
 
 }
 
-
-void AVRCharacter::UpdateMarkerLocation()
+bool AVRCharacter::FindTeleportDestination(TArray<FVector> &OutPath, FVector &OutLocation)
 {
-	
+	FVector Start = RightControllerTouch->GetComponentLocation();
+	FVector Look = RightControllerTouch->GetForwardVector();
+
+	FPredictProjectilePathParams Params(
+		5,
+		Start,
+		Look * ProjectilePathVelocity,
+		1,
+		ECollisionChannel::ECC_Visibility,
+		this
+	);
+	Params.bTraceComplex = true;
+	FPredictProjectilePathResult Result;
+	bool bHit = UGameplayStatics::PredictProjectilePath(this, Params, Result);
+
+	if (!bHit) return false;
+
+	for (FPredictProjectilePathPointData PointData : Result.PathData)
+	{
+		OutPath.Add(PointData.Location);
+	}
+
+	auto NavMesh = UNavigationSystemV1::GetNavigationSystem(GetWorld());
+	FNavLocation NavLocation;
+	bool bOnNavMesh = NavMesh->ProjectPointToNavigation(Result.HitResult.Location, NavLocation, FVector(100,100,100));
+
+	if (!bOnNavMesh) return false;
+
+	OutLocation = NavLocation.Location;
+
+	return true;
 }
 
+void AVRCharacter::UpdateDestinationMarker()
+{
+	TArray<FVector> Path;
+	FVector Location;
+	bool bHasDestination = FindTeleportDestination(Path, Location);
+
+	if (bHasDestination)
+	{
+		DestinationMarker->SetVisibility(true);
+
+		DestinationMarker->SetWorldLocation(Location);
+
+		DrawTeleportPath(Path);
+	}
+	else
+	{
+		DestinationMarker->SetVisibility(false);
+
+		TArray<FVector> EmptyPath;
+		DrawTeleportPath(EmptyPath);
+	}
+}
+
+void AVRCharacter::DrawTeleportPath(const TArray<FVector> &Path)
+{
+	UpdateSpline(Path);
+
+	for (USplineMeshComponent* SplineMesh : SplineMeshPool)
+	{
+		SplineMesh->SetVisibility(false);
+	}
+
+	int32 SegmentNum = Path.Num() - 1;
+	for (int32 i = 0; i < SegmentNum; ++i)
+	{
+		if (SplineMeshPool.Num() <= i)
+		{
+			USplineMeshComponent* SplineMesh = NewObject<USplineMeshComponent>(this);
+			SplineMesh->SetMobility(EComponentMobility::Movable);
+			SplineMesh->AttachToComponent(TeleportPath, FAttachmentTransformRules::KeepRelativeTransform);
+			SplineMesh->SetStaticMesh(TeleportArchMesh);
+			SplineMesh->SetMaterial(0, TeleportArchMaterial);
+			SplineMesh->RegisterComponent();
+
+			SplineMeshPool.Add(SplineMesh);
+		}
+
+		USplineMeshComponent* SplineMesh = SplineMeshPool[i];
+		SplineMesh->SetVisibility(true);
+
+		FVector StartPos, StartTangent, EndPos, EndTangent;
+		TeleportPath->GetLocalLocationAndTangentAtSplinePoint(i, StartPos, StartTangent);
+		TeleportPath->GetLocalLocationAndTangentAtSplinePoint(i + 1, EndPos, EndTangent);
+		SplineMesh->SetStartAndEnd(StartPos, StartTangent, EndPos, EndTangent);
+	}
+
+}
+
+void AVRCharacter::UpdateSpline(const TArray<FVector> &Path)
+{
+	TeleportPath->ClearSplinePoints(false);
+
+	for (int32 i = 0; i < Path.Num(); ++i)
+	{
+		FVector LocalPosition = TeleportPath->GetComponentTransform().InverseTransformPosition(Path[i]);
+		FSplinePoint Point(i, LocalPosition, ESplinePointType::Curve);
+		TeleportPath->AddPoint(Point, false);
+	}
+
+	TeleportPath->UpdateSpline();
+}
