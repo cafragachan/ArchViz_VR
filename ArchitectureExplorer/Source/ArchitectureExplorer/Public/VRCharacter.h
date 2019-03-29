@@ -49,10 +49,16 @@ private:
 	float ProjectilePathVelocity = 1000;
 
 	UPROPERTY(VisibleAnywhere)
-	class UPostProcessComponent* PostProcessComponent;
+	class UPostProcessComponent* PostProcessComponent = nullptr;
 
 	UPROPERTY(EditAnywhere)
-	class UMaterialInterface * BlinkerMaterial;
+	class UMaterialInterface * BlinkerMaterial = nullptr;
+
+	UPROPERTY(EditDefaultsOnly)
+	class UStaticMesh * TeleportArchMesh = nullptr;
+
+	UPROPERTY(EditDefaultsOnly)
+	class UMaterialInterface * TeleportArchMaterial = nullptr;
 
 	UPROPERTY(EditAnywhere)
 	class UCurveFloat* Curve = nullptr;
@@ -63,7 +69,16 @@ private:
 	UPROPERTY(EditAnywhere)
 	class UMotionControllerComponent* RightControllerTouch = nullptr;
 
+	UPROPERTY(VisibleAnywhere)
+	class USplineComponent* TeleportPath = nullptr;
+
+	UPROPERTY(VisibleAnywhere)
+	TArray<UStaticMeshComponent*> MeshPool;
+
+	TArray<FVector> PointsInSpace;
+
 	APlayerCameraManager* PlayerCameraManager = nullptr;
+
 	UMaterialInstanceDynamic* BlinkerInstance = nullptr;
 
 	FVector2D GetBlinkerCenter();
