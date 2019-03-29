@@ -23,13 +23,10 @@ protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
+
 public:	
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
-
-	void UpdateMarkerLocation();
-
-	void CameraCorrection();
 
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
@@ -48,10 +45,36 @@ private:
 	UPROPERTY(EditAnywhere, Category = "Setup")
 	float LineTraceReach = 1000;
 
+	UPROPERTY(EditAnywhere, Category = "Setup")
+	float ProjectilePathVelocity = 1000;
+
+	UPROPERTY(VisibleAnywhere)
+	class UPostProcessComponent* PostProcessComponent;
+
+	UPROPERTY(EditAnywhere)
+	class UMaterialInterface * BlinkerMaterial;
+
+	UPROPERTY(EditAnywhere)
+	class UCurveFloat* Curve = nullptr;
+
+	UPROPERTY(EditAnywhere)
+	class UMotionControllerComponent* LeftControllerTouch = nullptr;
+
+	UPROPERTY(EditAnywhere)
+	class UMotionControllerComponent* RightControllerTouch = nullptr;
+
 	APlayerCameraManager* PlayerCameraManager = nullptr;
+	UMaterialInstanceDynamic* BlinkerInstance = nullptr;
+
+	FVector2D GetBlinkerCenter();
 
 	void CharacterForwardMovement(float Forward_);
 	void CharacterRightMovement(float Right_);
 	void BeginTeletransport();
 	void EndTeletransport();
+	void UpdateBlinker();
+	void UpdateMarkerLocation();
+	void CameraCorrection();
+	void ProjectileMarker();
+
 };

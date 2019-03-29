@@ -9,6 +9,12 @@
 #include "Public/TimerManager.h"
 #include "GameFramework/PlayerController.h"
 #include "Components/CapsuleComponent.h"
+#include "NavigationSystem.h"
+#include "Components/PostProcessComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "HeadMountedDisplay/Public/MotionControllerComponent.h"
+#include "Kismet/GameplayStatics.h"
+#include "Engine.h"
 
 // Sets default values
 AVRCharacter::AVRCharacter()
@@ -22,9 +28,19 @@ AVRCharacter::AVRCharacter()
 	VRCamera = CreateDefaultSubobject<UCameraComponent>(FName("VR_Camera"));
 	VRCamera->SetupAttachment(VRRoot);
 
+	LeftControllerTouch = CreateDefaultSubobject<UMotionControllerComponent>(FName("LeftController"));
+	LeftControllerTouch->SetupAttachment(VRRoot);
+	LeftControllerTouch->SetTrackingSource(EControllerHand::Left);
+
+	RightControllerTouch = CreateDefaultSubobject<UMotionControllerComponent>(FName("RightController"));
+	RightControllerTouch->SetupAttachment(VRRoot);
+	RightControllerTouch->SetTrackingSource(EControllerHand::Right);
+
 	DestinationMarker = CreateDefaultSubobject<UStaticMeshComponent>(FName("VR_Marker"));
 	DestinationMarker->SetupAttachment(VRRoot);
 
+	PostProcessComponent = CreateDefaultSubobject<UPostProcessComponent>(FName("PostProcessComponent"));
+	PostProcessComponent->SetupAttachment(GetRootComponent());
 }
 
 // Called when the game starts or when spawned
@@ -34,8 +50,9 @@ void AVRCharacter::BeginPlay()
 	
 	APlayerController* PC = Cast<APlayerController>(GetController());
 	PlayerCameraManager = PC->PlayerCameraManager;
-	
+	BlinkerInstance = UMaterialInstanceDynamic::Create(BlinkerMaterial, this);
 }
+
 
 // Called every frame
 void AVRCharacter::Tick(float DeltaTime)
@@ -43,8 +60,10 @@ void AVRCharacter::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 
 	CameraCorrection();
-	UpdateMarkerLocation();
-
+	//UpdateMarkerLocation();
+	ProjectileMarker();
+	UpdateBlinker();
+	
 }
 
 // Called to bind functionality to input
@@ -67,6 +86,7 @@ void AVRCharacter::CameraCorrection()
 
 void AVRCharacter::CharacterForwardMovement(float Forward_)
 {
+	//SetBlinkerMaterial(Forward_); //use this as linear not as curve
 	AddMovementInput(VRCamera->GetForwardVector(), Forward_);
 }
 
@@ -99,20 +119,120 @@ void AVRCharacter::EndTeletransport()
 void AVRCharacter::UpdateMarkerLocation()
 {
 	FHitResult Hit;
-	FVector LineEnd = VRCamera->GetForwardVector() * LineTraceReach + VRCamera->GetComponentLocation();
-	bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, VRCamera->GetComponentLocation(), LineEnd, ECollisionChannel::ECC_Visibility);
 
-	if (bHit && Hit.Normal.Z > 0.9)
+	FVector Start = RightControllerTouch->GetComponentLocation();
+	FVector Look = RightControllerTouch->GetForwardVector();
+	//Look = Look.RotateAngleAxis(30, RightControllerTouch->GetRightVector());
+	FVector End = Start + Look * LineTraceReach;
+	bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, RightControllerTouch->GetComponentLocation(), End, ECollisionChannel::ECC_Visibility);
+
+	//DrawDebugLine(GetWorld(), Start, End, FColor::Cyan, false, 0, 0, 10);
+
+	if (bHit)
 	{
 		DestinationMarker->SetVisibility(true);
-		auto RayPoint = Hit.Location;
-		DestinationMarker->SetWorldLocation(RayPoint);
+		auto NavMesh = UNavigationSystemV1::GetNavigationSystem(GetWorld());
+		FNavLocation NavPos;
+		bool bNewPos = NavMesh->ProjectPointToNavigation(Hit.Location, NavPos);
+
+		if (bNewPos)
+		{
+			DestinationMarker->SetWorldLocation(NavPos);
+		}
 	}
 	else
 	{
 		DestinationMarker->SetVisibility(false);
-
 	}
 }
 
+void AVRCharacter::UpdateBlinker()
+{
+	if (!ensure(BlinkerInstance && Curve)) return;
+	//BlinkerInstance->SetScalarParameterValue("BlinkerRadius", 1.5 - FMath::Abs(Value_)); /////// use this for linear interpolation
+
+	auto Radius = Curve->GetFloatValue(GetVelocity().Size());
+	BlinkerInstance->SetScalarParameterValue("BlinkerRadius", Radius);
+
+	auto Center = GetBlinkerCenter();
+	BlinkerInstance->SetVectorParameterValue("Center", FLinearColor(Center.X, Center.Y, 0));
+
+	PostProcessComponent->AddOrUpdateBlendable(BlinkerInstance);
+
+}
+
+void AVRCharacter::ProjectileMarker()
+{
+	FPredictProjectilePathParams Params = FPredictProjectilePathParams
+	(
+		5.f,
+		RightControllerTouch->GetComponentLocation(),
+		RightControllerTouch->GetForwardVector() * ProjectilePathVelocity,
+		1.f,
+		ECollisionChannel::ECC_Visibility,
+		GetOwner()
+	);
+
+	Params.DrawDebugType = EDrawDebugTrace::ForOneFrame;
+	Params.bTraceComplex = true;
+
+	FPredictProjectilePathResult PathResult;
+
+	bool bPath = UGameplayStatics::PredictProjectilePath(GetWorld(), Params, PathResult);
+
+	if (bPath)
+	{
+		DestinationMarker->SetVisibility(true);
+		auto NavMesh = UNavigationSystemV1::GetNavigationSystem(GetWorld());
+		FNavLocation NavPos;
+		bool bNewPos = NavMesh->ProjectPointToNavigation(PathResult.HitResult.Location, NavPos);
+
+		if (bNewPos)
+		{
+			DestinationMarker->SetWorldLocation(NavPos);
+		}
+	}
+	else
+	{
+		DestinationMarker->SetVisibility(false);
+	}
+}
+
+FVector2D AVRCharacter::GetBlinkerCenter()
+{
+	if (GetVelocity().IsNearlyZero())	return FVector2D(0.5, 0.5);
+
+	auto VelDirection = GetVelocity().GetSafeNormal();
+	FVector FuturePosition;
+
+	if (FVector::DotProduct(VelDirection, VRCamera->GetForwardVector()) > 0)
+	{
+		FuturePosition = GetVelocity().GetSafeNormal() * 1000 + VRCamera->GetComponentLocation();
+	}
+	else
+	{
+		FuturePosition = - GetVelocity().GetSafeNormal() * 1000 + VRCamera->GetComponentLocation();
+	}
+
+	FVector2D ScreenPosition;
+	auto PC = Cast<APlayerController>(GetController());
+	PC->ProjectWorldLocationToScreen(FuturePosition, ScreenPosition);
+		
+	//Mapped Values 
+	int32 XVal = (int32)ScreenPosition.X;
+	int32 YVal = (int32)ScreenPosition.Y;
+
+	int32 VPX, VPY;
+	PC->GetViewportSize(VPX, VPY);
+
+	FVector2D Range = FVector2D(0, 1);
+	FVector2D VPSizeRangeX = FVector2D(0, VPX);
+	FVector2D VPSizeRangeY = FVector2D(0, VPY);
+
+	auto XMapped = FMath::GetMappedRangeValueClamped(VPSizeRangeX, Range, XVal);
+	auto YMapped = FMath::GetMappedRangeValueClamped(VPSizeRangeY, Range, YVal);
+
+	return FVector2D(XMapped, YMapped);
+
+}
 
