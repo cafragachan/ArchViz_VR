@@ -88,13 +88,9 @@ private:
 	FVector2D GetBlinkerCenter();
 
 	bool FindTeleportDestination(TArray<FVector>& OutPath, FVector & OutLocation);
-
 	void UpdateDestinationMarker();
-
 	void DrawTeleportPath(const TArray<FVector>& Path);
-
 	void UpdateSpline(const TArray<FVector>& Path);
-
 	void CharacterForwardMovement(float Forward_);
 	void CharacterRightMovement(float Right_);
 	void BeginTeletransport();
@@ -102,5 +98,9 @@ private:
 	void UpdateBlinker();
 	void CameraCorrection();
 
+	void LeftGrip();
+	void LeftRelease();
+	void RightGrip();
+	void RightRelease();
 
 };

@@ -55,6 +55,7 @@ void AVRCharacter::BeginPlay()
 	{
 		LeftControllerTouch->AttachToComponent(VRRoot, FAttachmentTransformRules::KeepRelativeTransform);
 		LeftControllerTouch->SetHand(EControllerHand::Left);
+		LeftControllerTouch->SetPlayerController(PC);
 	}
 
 	RightControllerTouch = GetWorld()->SpawnActor<AHandController>(HandControllerClass);
@@ -62,10 +63,15 @@ void AVRCharacter::BeginPlay()
 	{
 		RightControllerTouch->AttachToComponent(VRRoot, FAttachmentTransformRules::KeepRelativeTransform);
 		RightControllerTouch->SetHand(EControllerHand::Right);
+		RightControllerTouch->SetPlayerController(PC);
+	}	
+
+	if(RightControllerTouch && LeftControllerTouch)
+	{
+		LeftControllerTouch->SetOtherController(RightControllerTouch);
+		RightControllerTouch->SetOtherController(LeftControllerTouch);
 	}
 
-	
-	
 }
 
 
@@ -88,6 +94,11 @@ void AVRCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
 	PlayerInputComponent->BindAxis("Forward", this, &AVRCharacter::CharacterForwardMovement);
 	PlayerInputComponent->BindAxis("Right", this, &AVRCharacter::CharacterRightMovement);
 	PlayerInputComponent->BindAction("Teleport", EInputEvent::IE_Pressed, this, &AVRCharacter::BeginTeletransport);
+
+	PlayerInputComponent->BindAction("LeftGrip", EInputEvent::IE_Pressed, this, &AVRCharacter::LeftGrip);
+	PlayerInputComponent->BindAction("LeftGrip", EInputEvent::IE_Released, this, &AVRCharacter::LeftRelease);
+	PlayerInputComponent->BindAction("RightGrip", EInputEvent::IE_Pressed, this, &AVRCharacter::RightGrip);
+	PlayerInputComponent->BindAction("RightGrip", EInputEvent::IE_Released, this, &AVRCharacter::RightRelease);
 }
 
 void AVRCharacter::CameraCorrection()
@@ -287,4 +298,21 @@ void AVRCharacter::UpdateSpline(const TArray<FVector> &Path)
 	}
 
 	TeleportPath->UpdateSpline();
+}
+
+void AVRCharacter::LeftGrip()
+{ 
+	LeftControllerTouch->Grip();
+}
+void AVRCharacter::LeftRelease()
+{
+	LeftControllerTouch->Release(); 
+}
+void AVRCharacter::RightGrip()
+{ 
+	RightControllerTouch->Grip();
+}
+void AVRCharacter::RightRelease()
+{ 
+	RightControllerTouch->Release();
 }

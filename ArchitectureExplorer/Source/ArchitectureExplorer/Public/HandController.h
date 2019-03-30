@@ -15,8 +15,6 @@ public:
 	// Sets default values for this actor's properties
 	AHandController();
 
-	void SetHand(EControllerHand Hand); 
-
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
@@ -30,5 +28,39 @@ private:
 
 	UPROPERTY(VisibleAnywhere)
 	class UMotionControllerComponent* MotionController;
+
+	UPROPERTY(EditAnywhere)
+	class UHapticFeedbackEffect_Base*  HapticEffect = nullptr;
+
+	UFUNCTION()
+	void ActorBeginOverlap(AActor* OverlappedActor, AActor* OtherActor);
+
+	UFUNCTION()
+	void ActorEndOverlap(AActor* OverlappedActor, AActor* OtherActor);
+
+	void ClimbingMovement();
+	bool CanClimb() const;
+
+	class APlayerController* PlayerController = nullptr;
+	EControllerHand MyHand;
+	AHandController* OtherController = nullptr;
+
+
+public:
+
+	//State
+	bool bCanClimb = false;
+	bool bIsClimbing = false;
+	FVector ClimbingCharacterInitialPosition;
+	FVector ClimbingControllerInitialPosition;
+
+	//Setters
+	void SetHand(EControllerHand Hand);
+	void SetOtherController(AHandController* Controller_);
+	void SetPlayerController(APlayerController* PlayerController_);
+
+	//Input bindings
+	void Grip();
+	void Release();
 
 };
